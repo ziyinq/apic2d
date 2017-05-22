@@ -26,8 +26,7 @@ struct Particle
   Matrix2s c;
   
   Vector2s buf0;
-  Vector2s buf1;
-  Matrix2s buf2;
+
   scalar radii;
   scalar dens;
   ParticleType type;

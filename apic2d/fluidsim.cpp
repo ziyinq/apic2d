@@ -16,7 +16,7 @@
 #include "openglutils.h"
 
 const scalar source_velocity = 40.0;
-const int particle_correction_step = 8;
+const int particle_correction_step = 1;
 
 scalar fraction_inside(scalar phi_left, scalar phi_right);
 void extrapolate(Array2s& grid, Array2s& old_grid, const Array2s& grid_weight, const Array2s& grid_liquid_weight, Array2c& valid, Array2c old_valid, const Vector2i& offset);
@@ -180,18 +180,6 @@ void FluidSim::correct(scalar dt)
     }
   }
   
-  // Resample New Velocity
-  for(int n = 0; n < np; ++n)
-  {
-    if(n % particle_correction_step != offset) continue;
-    Particle& p = particles[n];
-    if(p.type != PT_LIQUID) continue;
-
-    p.buf1 = p.v;
-    p.buf2 = p.c;
-    resample(p.buf0, p.buf1, p.buf2);
-  }
-  
   // Update
   for(int n = 0; n < np; ++n)
   {
@@ -200,8 +188,6 @@ void FluidSim::correct(scalar dt)
     if(p.type != PT_LIQUID) continue;
 
     p.x = p.buf0;
-    p.v = p.buf1;
-    p.c = p.buf2;
   }
 }
 
@@ -216,10 +202,6 @@ void FluidSim::advance(scalar dt) {
     
     //Passively advect particles
     advect_particles(dt);
-    
-    m_sorter->sort(this);
-    
-    correct(dt);
     
     m_sorter->sort(this);
     
@@ -239,6 +221,8 @@ void FluidSim::advance(scalar dt) {
     //For extrapolated velocities, replace the normal component with
     //that of the object.
     constrain_velocity();
+    
+    correct(dt);
     
     map_g2p_apic();
     
@@ -836,8 +820,6 @@ Particle::Particle(const Vector2s& x_, const Vector2s& v_, const scalar& radii_,
 {
   c.setZero();
   buf0.setZero();
-  buf1.setZero();
-  buf2.setZero();
 }
 
 Particle::Particle()
@@ -845,8 +827,6 @@ Particle::Particle()
 {
   c.setZero();
   buf0.setZero();
-  buf1.setZero();
-  buf2.setZero();
 }
 
 Particle::Particle(const Particle& p)
@@ -854,8 +834,6 @@ Particle::Particle(const Particle& p)
 {
   c.setZero();
   buf0.setZero();
-  buf1.setZero();
-  buf2.setZero();
 }
 
 //Apply several iterations of a very simple "Jacobi"-style propagation of valid velocity data in all directions
