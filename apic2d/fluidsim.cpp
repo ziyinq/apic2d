@@ -132,7 +132,7 @@ void FluidSim::correct(scalar dt)
 {
   int np = (int) particles.size();
   
-  const scalar re = dx / sqrt(2.0);
+  const scalar re = dx / sqrt(2.0) * 1.1;
   
   int offset = rand() % particle_correction_step;
   // Compute Pseudo Moved Point
@@ -314,8 +314,8 @@ void FluidSim::compute_phi() {
       if(i_off < 0 || i_off >= ni || j_off < 0 || j_off >= nj)
         continue;
       
-      Vector2s pos = Vector2s((i_off+0.5f)*dx, (j_off+0.5f)*dx) + origin;
-      scalar phi_temp = (pos - point).norm() - 1.00002 * particles[p].radii;
+      Vector2s pos = Vector2s((i_off+0.5)*dx, (j_off+0.5)*dx) + origin;
+      scalar phi_temp = (pos - point).norm() - std::max(particles[p].radii, dx * sqrt(2.0) / 2.0);
       liquid_phi(i_off,j_off) = min(liquid_phi(i_off,j_off), phi_temp);
     }
   }
@@ -323,11 +323,9 @@ void FluidSim::compute_phi() {
   //"extrapolate" phi into solids if nearby
   for(int j = 0; j < nj; ++j) {
     for(int i = 0; i < ni; ++i) {
-      if(liquid_phi(i,j) < 0.5*dx) {
-        float solid_phi_val = 0.25f*(nodal_solid_phi(i,j) + nodal_solid_phi(i+1,j) + nodal_solid_phi(i,j+1) + nodal_solid_phi(i+1,j+1));
-        if(solid_phi_val < 0)
-          liquid_phi(i,j) = -0.5*dx;
-      }
+      Vector2s pos = Vector2s((i+0.5)*dx, (j+0.5)*dx) + origin;
+      scalar solid_phi_val = compute_phi(pos);
+      liquid_phi(i, j) = std::min(liquid_phi(i, j), solid_phi_val);
     }
   }
 }
@@ -498,7 +496,7 @@ void FluidSim::solve_pressure(scalar dt) {
       rhs[index] = 0;
       pressure[index] = 0;
       float centre_phi = liquid_phi(i,j);
-      if(centre_phi < 0) {
+      if(centre_phi < 0 && (u_weights(i,j) > 0.0 || u_weights(i+1,j) > 0.0 || v_weights(i,j) > 0.0 || v_weights(i,j+1) > 0.0)) {
         
         //right neighbour
         float term = u_weights(i+1,j) * dt / sqr(dx);
@@ -640,8 +638,8 @@ void FluidSim::init_random_particles()
   {
     for(int j = 0; j < nj; ++j) {
       for(int k = 0; k < 2; ++k) {
-        scalar x = ((scalar) i + 0.5 + (((scalar)rand() / (scalar)RAND_MAX) * 0.5 - 0.5) ) * dx;
-        scalar y = ((scalar) j + 0.5 + (((scalar)rand() / (scalar)RAND_MAX) * 0.5 - 0.5) ) * dx;
+        scalar x = ((scalar) i + 0.5 + (((scalar)rand() / (scalar)RAND_MAX) * 2.0 - 1.0) ) * dx;
+        scalar y = ((scalar) j + 0.5 + (((scalar)rand() / (scalar)RAND_MAX) * 2.0 - 1.0) ) * dx;
         Vector2s pt = Vector2s(x,y) + origin;
         
         scalar phi = compute_phi(pt);
@@ -851,7 +849,7 @@ void extrapolate(Array2s& grid, Array2s& old_grid, const Array2s& grid_weight, c
   
   old_valid = valid;
   
-  for(int layers = 0; layers < 4; ++layers) {
+  for(int layers = 0; layers < 1; ++layers) {
     
     Array2s* pgrid_source = pgrids[layers & 1];
     Array2s* pgrid_target = pgrids[!(layers & 1)];
