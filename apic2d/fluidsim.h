@@ -38,6 +38,17 @@ public:
   
   scalar rho;
   
+  enum INTEGRATOR_TYPE
+  {
+    IT_PIC,
+    IT_FLIP_BRACKBILL,
+    IT_FLIP_BRIDSON,
+    IT_FLIP_JIANG,
+    IT_APIC,
+    
+    IT_COUNT
+  };
+  
   enum BOUNDARY_TYPE
   {
     BT_CIRCLE,
@@ -79,37 +90,37 @@ public:
   scalar compute_phi(const Vector2s& pos) const;
   scalar compute_phi(const Vector2s& pos, const Boundary& b) const;
   
-  // Boundaries
+  /*! Boundaries */
   Boundary* root_boundary;
   Boundary* root_sources;
   
-  // Grid Origin
+  /*! Grid Origin */
   Vector2s origin;
   
-  // Grid dimensions
+  /*! Grid dimensions */
   int ni,nj;
   scalar dx;
   
-  // Fluid velocity
+  /*! Fluid velocity */
   Array2s u, v;
   Array2s temp_u, temp_v;
   Array2s saved_u, saved_v;
   
-  // Tracer particles
+  /*! Tracer particles */
   std::vector<Particle> particles;
   
-  // Static geometry representation
+  /*! Static geometry representation */
   Array2s nodal_solid_phi;
   Array2s liquid_phi;
   Array2s u_weights, v_weights;
   
-  // Data arrays for extrapolation
+  /*! Data arrays for extrapolation */
   Array2c valid, old_valid;
   Array2c u_valid, v_valid;
   
   sorter* m_sorter;
   
-  // Solver data
+  /*! Solver data */
   robertbridson::PCGSolver<scalar> solver;
   robertbridson::SparseMatrix<scalar> matrix;
   std::vector<double> rhs;
@@ -122,11 +133,15 @@ public:
   Matrix2s get_saved_affine_matrix(const Vector2s& position);
   void add_particle(const Particle& position);
   
+  /*! P2G scheme */
   void map_p2g();
-  void map_g2p_pic();
-  void map_g2p_apic();
-  void map_g2p_aflip(const scalar coeff = 0.95);
-  void map_g2p_flip(const scalar coeff = 0.95);
+
+  /*! different G2P schemes */
+  void map_g2p_pic(float dt);
+  void map_g2p_apic(float dt);
+  void map_g2p_flip_brackbill(float dt, const scalar coeff);
+  void map_g2p_flip_bridson(float dt, const scalar coeff);
+  void map_g2p_flip_jiang(float dt, const scalar coeff);
   
   void save_velocity();
   
@@ -194,7 +209,7 @@ protected:
   
   //tracer particle operations
   
-  void advect_particles(scalar dt);
+  void particle_boundary_collision(scalar dt);
   
   //fluid velocity operations
   void advect(scalar dt);

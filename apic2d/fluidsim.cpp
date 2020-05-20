@@ -186,48 +186,72 @@ void FluidSim::correct(scalar dt)
     if(n % particle_correction_step != offset) continue;
     Particle& p = particles[n];
     if(p.type != PT_LIQUID) continue;
-
+    
     p.x = p.buf0;
   }
 }
 
-//The main fluid simulation step
+// The main fluid simulation step
 void FluidSim::advance(scalar dt) {
-  scalar t = 0;
+  // Change here to try differnt integration scheme
+  const INTEGRATOR_TYPE integration_scheme = IT_APIC;
+  const scalar flip_coefficient = 0.95f;
   
-  while(t < dt) {
-    float substep = cfl() * 3.0;
-    if(t + substep > dt)
-      substep = dt - t;
-    
-    //Passively advect particles
-    advect_particles(dt);
-    
-    m_sorter->sort(this);
-    
-    map_p2g();
-    
-    add_force(dt);
-    project(dt);
-    
-    temp_u = u;
-    temp_v = v;
-    //Pressure projection only produces valid velocities in faces with non-zero associated face area.
-    //Because the advection step may interpolate from these invalid faces,
-    //we must extrapolate velocities from the fluid domain into these zero-area faces.
-    extrapolate(u, temp_u, u_weights, liquid_phi, valid, old_valid, Vector2i(-1, 0));
-    extrapolate(v, temp_v, v_weights, liquid_phi, valid, old_valid, Vector2i(0, -1));
-    
-    //For extrapolated velocities, replace the normal component with
-    //that of the object.
-    constrain_velocity();
-    
-    correct(dt);
-    
-    map_g2p_apic();
-    
-    t+=substep;
+  //Passively advect particles
+  m_sorter->sort(this);
+  
+  map_p2g();
+  
+  if (integration_scheme == IT_FLIP_JIANG ||
+      integration_scheme == IT_FLIP_BRACKBILL ||
+      integration_scheme == IT_FLIP_BRIDSON) {
+    save_velocity();
   }
+  
+  add_force(dt);
+  project(dt);
+  
+  temp_u = u;
+  temp_v = v;
+  //Pressure projection only produces valid velocities in faces with non-zero associated face area.
+  //Because the advection step may interpolate from these invalid faces,
+  //we must extrapolate velocities from the fluid domain into these zero-area faces.
+  extrapolate(u, temp_u, u_weights, liquid_phi, valid, old_valid, Vector2i(-1, 0));
+  extrapolate(v, temp_v, v_weights, liquid_phi, valid, old_valid, Vector2i(0, -1));
+  
+  //For extrapolated velocities, replace the normal component with
+  //that of the object.
+  constrain_velocity();
+  
+  correct(dt);
+  
+  switch (integration_scheme) {
+    case IT_PIC:
+      map_g2p_pic(dt);
+      break;
+      
+    case IT_FLIP_BRACKBILL:
+      map_g2p_flip_brackbill(dt, flip_coefficient);
+      break;
+        
+    case IT_FLIP_BRIDSON:
+      map_g2p_flip_bridson(dt, flip_coefficient);
+      break;
+      
+    case IT_FLIP_JIANG:
+      map_g2p_flip_jiang(dt, flip_coefficient);
+      break;
+    
+    case IT_APIC:
+      map_g2p_apic(dt);
+      break;
+      
+    default:
+      std::cerr << "Unknown integrator type!" << std::endl;
+      break;
+  }
+
+  particle_boundary_collision(dt);
   
 }
 
@@ -239,7 +263,7 @@ void FluidSim::save_velocity()
 
 void FluidSim::add_force(scalar dt) {
   // splat particles
-
+  
   for(int j = 0; j < nj+1; ++j) for(int i = 0; i < ni; ++i) {
     v(i, j) += -981.0 * dt;
     Vector2s pos = Vector2s((i+0.5)*dx, j*dx) + origin;
@@ -336,12 +360,11 @@ void FluidSim::add_particle(const Particle& p) {
 }
 
 //move the particles in the fluid
-void FluidSim::advect_particles(scalar dt) {
+void FluidSim::particle_boundary_collision(scalar dt) {
   
   for(int p = 0; p < particles.size(); ++p) {
     if(particles[p].type == PT_SOLID) continue;
     
-    particles[p].x += particles[p].v * dt;
     Vector2s pp = (particles[p].x - origin)/dx;
     
     //Particles can still occasionally leave the domain due to truncation errors,
@@ -651,7 +674,7 @@ void FluidSim::init_random_particles()
 
 void FluidSim::map_p2g()
 {
-
+  
   //u-component of velocity
   for(int j = 0; j < nj; ++j) for(int i = 0; i < ni+1; ++i) {
     Vector2s pos = Vector2s(i*dx, (j+0.5)*dx) + origin;
@@ -689,17 +712,24 @@ void FluidSim::map_p2g()
   }
 }
 
-void FluidSim::map_g2p_pic()
+/*!
+ \brief  PIC scheme
+ */
+void FluidSim::map_g2p_pic(float dt)
 {
   for(Particle& p : particles)
   {
     if(p.type == PT_SOLID) continue;
     
     p.v = get_velocity(p.x);
+    p.x += p.v * dt;
   }
 }
 
-void FluidSim::map_g2p_apic()
+/*!
+ \brief  APIC scheme
+ */
+void FluidSim::map_g2p_apic(float dt)
 {
   for(Particle& p : particles)
   {
@@ -707,28 +737,61 @@ void FluidSim::map_g2p_apic()
     
     p.v = get_velocity(p.x);
     p.c = get_affine_matrix(p.x);
+    p.x += p.v * dt;
   }
 }
 
-void FluidSim::map_g2p_flip(const scalar coeff)
+/*!
+ \brief  FLIP scheme used in the 1986 paper from Brackbill
+ */
+void FluidSim::map_g2p_flip_brackbill(float dt, const scalar coeff)
 {
   for(Particle& p : particles)
   {
     if(p.type == PT_SOLID) continue;
     
-    p.v = get_velocity(p.x) + coeff * (p.v - get_saved_velocity(p.x));
+    Vector2s next_grid_velocity = get_velocity(p.x);
+    Vector2s original_grid_velocity = get_saved_velocity(p.x);
+    Vector2s diff_grid_velocity = next_grid_velocity - original_grid_velocity;
+    
+    p.v += diff_grid_velocity;
+    p.x += (original_grid_velocity + diff_grid_velocity * coeff) * dt;
   }
 }
 
-
-void FluidSim::map_g2p_aflip(const scalar coeff)
+/*!
+ \brief  FLIP scheme from Bridson
+ */
+void FluidSim::map_g2p_flip_bridson(float dt, const scalar coeff)
 {
   for(Particle& p : particles)
   {
     if(p.type == PT_SOLID) continue;
     
-    p.v = get_velocity(p.x) + coeff * (p.v - get_saved_velocity(p.x));
-    p.c = get_affine_matrix(p.x);
+    Vector2s next_grid_velocity = get_velocity(p.x);
+    Vector2s original_grid_velocity = get_saved_velocity(p.x);
+    Vector2s diff_grid_velocity = next_grid_velocity - original_grid_velocity;
+    
+    p.v = next_grid_velocity + (p.v + diff_grid_velocity - next_grid_velocity) * coeff;
+    p.x += p.v * dt;
+  }
+}
+
+/*!
+ \brief  FLIP scheme used in the APIC paper from Jiang et al.
+ */
+void FluidSim::map_g2p_flip_jiang(float dt, const scalar coeff)
+{
+  for(Particle& p : particles)
+  {
+    if(p.type == PT_SOLID) continue;
+    
+    Vector2s next_grid_velocity = get_velocity(p.x);
+    Vector2s original_grid_velocity = get_saved_velocity(p.x);
+    Vector2s diff_grid_velocity = next_grid_velocity - original_grid_velocity;
+    
+    p.v = next_grid_velocity + (p.v + diff_grid_velocity - next_grid_velocity) * coeff;
+    p.x += next_grid_velocity * dt;
   }
 }
 

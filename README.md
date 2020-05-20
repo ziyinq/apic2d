@@ -1,6 +1,6 @@
 Affine Particle in Cell in 2D
 ================
-![Screenshot](http://www.columbia.edu/~yf2320/apic2d.jpg)
+![Screenshot](http://www.cs.columbia.edu/cg/raymond/apic2d.jpg)
 APIC2D is an educational project to illustrate the affine-particle-in-cell algorithm in 2D, for water simulation.
 
 The papers implemented here include:
