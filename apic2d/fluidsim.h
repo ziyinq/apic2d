@@ -85,6 +85,7 @@ public:
   void advance(scalar dt);
   void update_boundary();
   void init_random_particles();
+  void initDambreak();
   void render();
   void render_boundaries(const Boundary& b);
   scalar compute_phi(const Vector2s& pos) const;
@@ -163,8 +164,9 @@ protected:
   }
   
   inline scalar box_phi(const Vector2s& position, const Vector2s& centre, const Vector2s& expand) const {
-    scalar dx = fabs(position[0] - centre[0]) - expand[0];
-    scalar dy = fabs(position[1] - centre[1]) - expand[1];
+    Vector2s center = (centre + (centre + expand)) / 2.;
+    scalar dx = fabs(position[0] - center[0]) - expand[0] / 2.;
+    scalar dy = fabs(position[1] - center[1]) - expand[1] / 2.;
     scalar dax = max(dx, 0.0);
     scalar day = max(dy, 0.0);
     return min(max(dx, dy), 0.0) + sqrt(dax * dax + day * day);

@@ -177,6 +177,7 @@ void FluidSim::correct(scalar dt)
       interpolate_gradient(normal, pp, nodal_solid_phi);
       normal.normalize();
       p.buf0 -= phi_value*normal;
+//      std::cout << normal << std::endl;
     }
   }
   
@@ -223,7 +224,7 @@ void FluidSim::advance(scalar dt) {
   //that of the object.
   constrain_velocity();
   
-  correct(dt);
+//  correct(dt);
   
   switch (integration_scheme) {
     case IT_PIC:
@@ -361,7 +362,7 @@ void FluidSim::add_particle(const Particle& p) {
 
 //move the particles in the fluid
 void FluidSim::particle_boundary_collision(scalar dt) {
-  
+
   for(int p = 0; p < particles.size(); ++p) {
     if(particles[p].type == PT_SOLID) continue;
     
@@ -670,6 +671,21 @@ void FluidSim::init_random_particles()
       }
     }
   }
+}
+
+void FluidSim::initDambreak()
+{
+    for(int i = 5; i < 25; ++i)
+    {
+        for(int j = 5; j < 45; ++j) {
+            for(int k = 0; k < 2; ++k) {
+                scalar x = ((scalar) i + 0.5 + (((scalar)rand() / (scalar)RAND_MAX) * 2.0 - 1.0) ) * dx;
+                scalar y = ((scalar) j + 0.5 + (((scalar)rand() / (scalar)RAND_MAX) * 2.0 - 1.0) ) * dx;
+                Vector2s pt = Vector2s(x,y) + origin;
+                add_particle(Particle(pt, Vector2s::Zero(), dx / sqrt(2.0), PT_LIQUID));
+            }
+        }
+    }
 }
 
 void FluidSim::map_p2g()
