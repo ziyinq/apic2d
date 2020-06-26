@@ -14,6 +14,7 @@
 #endif
 
 #include "openglutils.h"
+#include "gluvi.h"
 
 const scalar source_velocity = 40.0;
 const int particle_correction_step = 1;
@@ -246,6 +247,10 @@ void FluidSim::advance(scalar dt) {
     case IT_APIC:
       map_g2p_apic(dt);
       break;
+
+      case IT_DAPIC:
+          map_g2p_dapic(dt);
+          break;
       
     default:
       std::cerr << "Unknown integrator type!" << std::endl;
@@ -481,6 +486,7 @@ scalar fraction_inside(scalar phi_left, scalar phi_right) {
     return phi_right / (phi_right - phi_left);
   else
     return 0;
+//    return 1;
 }
 
 //Compute finite-volume style face-weights for fluid from nodal signed distances
@@ -489,10 +495,12 @@ void FluidSim::compute_weights() {
   for(int j = 0; j < u_weights.nj; ++j) for(int i = 0; i < u_weights.ni; ++i) {
     u_weights(i,j) = 1 - fraction_inside(nodal_solid_phi(i,j+1), nodal_solid_phi(i,j));
     u_weights(i,j) = clamp(u_weights(i,j), 0.0, 1.0);
+//      u_weights(i,j) = 1;
   }
   for(int j = 0; j < v_weights.nj; ++j) for(int i = 0; i < v_weights.ni; ++i) {
     v_weights(i,j) = 1 - fraction_inside(nodal_solid_phi(i+1,j), nodal_solid_phi(i,j));
     v_weights(i,j) = clamp(v_weights(i,j), 0.0, 1.0);
+//    v_weights(i,j) = 1;
   }
   
 }
@@ -675,10 +683,10 @@ void FluidSim::init_random_particles()
 
 void FluidSim::initDambreak()
 {
-    for(int i = 5; i < 25; ++i)
+    for(int i = 5; i < 20; ++i)
     {
         for(int j = 5; j < 45; ++j) {
-            for(int k = 0; k < 2; ++k) {
+            for(int k = 0; k < 4; ++k) {
                 scalar x = ((scalar) i + 0.5 + (((scalar)rand() / (scalar)RAND_MAX) * 2.0 - 1.0) ) * dx;
                 scalar y = ((scalar) j + 0.5 + (((scalar)rand() / (scalar)RAND_MAX) * 2.0 - 1.0) ) * dx;
                 Vector2s pt = Vector2s(x,y) + origin;
@@ -755,6 +763,51 @@ void FluidSim::map_g2p_apic(float dt)
     p.c = get_affine_matrix(p.x);
     p.x += p.v * dt;
   }
+}
+
+void FluidSim::map_g2p_dapic(float dt)
+{
+    Vector3sT k1 = Vector3sT(0,1,0);
+    Vector3sT k2 = Vector3sT(0,0,1);
+    for(Particle& p : particles)
+    {
+        if(p.type == PT_SOLID) continue;
+
+        p.v = get_velocity(p.x);
+        p.c = construct_dapic_c(p.x);
+        p.x += p.v * dt;
+    }
+}
+
+Matrix2s FluidSim::construct_dapic_c(Vector2s &position)
+{
+    Matrix7s A = Matrix7s::Zero();
+    Matrix3s Mu = Matrix3s::Zero();
+    Matrix3s Mv = Matrix3s::Zero();
+    Vector7s b = Vector7sT::Zero();
+    Vector7s x;
+    Vector6s k;
+    k << 0 , 1, 0, 0, 0, 1;
+
+    Vector2s p = (position - origin) / dx;
+    Vector2s p0 = p - Vector2s(0, 0.5);
+    Vector2s p1 = p - Vector2s(0.5, 0);
+
+    Vector3s bu, bv;
+    interpolate_M(p0, u, dx, Mu, bu);
+    interpolate_M(p1, v, dx, Mv, bv);
+    A.block<3,3>(0,0) = Mu;
+    A.block<3,3>(3,3) = Mv;
+    A.block<1,6>(6,0) = k.transpose();
+    A.block<6,1>(0,6) = k;
+
+    b.block<3,1>(0,0) = bu;
+    b.block<3,1>(3,0) = bv;
+    x = A.fullPivLu().solve(b);
+    Matrix2s c;
+    c.col(0) = x.block<2,1>(1,0);
+    c.col(1) = x.block<2,1>(4,0);
+    return c;
 }
 
 /*!
@@ -882,6 +935,9 @@ void FluidSim::render()
   }
   
   glPopMatrix();
+  std::string filename = "../../output/image_" + std::to_string(count) + ".ppm";
+  Gluvi::ppm_screenshot(filename.c_str());
+  count += 1;
 }
 
 FluidSim::Boundary::Boundary(const Vector2s& center_, const Vector2s& parameter_, BOUNDARY_TYPE type_, bool inside)

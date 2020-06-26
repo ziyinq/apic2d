@@ -37,6 +37,7 @@ public:
   virtual ~FluidSim();
   
   scalar rho;
+  int count = 0;
   
   enum INTEGRATOR_TYPE
   {
@@ -45,6 +46,7 @@ public:
     IT_FLIP_BRIDSON,
     IT_FLIP_JIANG,
     IT_APIC,
+    IT_DAPIC,
     
     IT_COUNT
   };
@@ -143,6 +145,8 @@ public:
   void map_g2p_flip_brackbill(float dt, const scalar coeff);
   void map_g2p_flip_bridson(float dt, const scalar coeff);
   void map_g2p_flip_jiang(float dt, const scalar coeff);
+  void map_g2p_dapic(float dt);
+  Matrix2s construct_dapic_c(Vector2s& position);
   
   void save_velocity();
   

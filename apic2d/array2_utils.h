@@ -5,6 +5,29 @@
 #include "util.h"
 
 template<class S, class T>
+void interpolate_M(const Eigen::Matrix<S, 2, 1>& point, const Array2<T, Array1<T> >& grid, S dx, Matrix3s& M, Vector3s& b)
+{
+    int i,j;
+    S fx,fy;
+
+    get_barycentric(point[0], i, fx, 0, grid.ni);
+    get_barycentric(point[1], j, fy, 0, grid.nj);
+
+    M.coeffRef(0,0) = 1;
+    M.coeffRef(1,1) = -(i - point[0])*dx*(1 + i - point[0]) * dx;
+    M.coeffRef(2,2) = -(j - point[1])*dx*(1 + j - point[1]) * dx;
+
+    Vector3s aa = Vector3s(1, (i - point[0])*dx, (j - point[1])*dx);
+    Vector3s bb = Vector3s(1, ((i+1) - point[0])*dx, (j - point[1])*dx);
+    Vector3s cc = Vector3s(1, (i - point[0])*dx, (j + 1 - point[1])*dx);
+    Vector3s dd = Vector3s(1, (i + 1 - point[0])*dx, (j + 1 - point[1])*dx);
+    b = (1-fx)*(1-fy)*grid(i,j)*aa +
+        fx*(1-fy)*grid(i+1,j)*bb +
+        (1-fx)*fy*grid(i,j+1)*cc+
+        fx*fy*grid(i+1,j+1)*dd;
+}
+
+template<class S, class T>
 T interpolate_value(const Eigen::Matrix<S, 2, 1>& point, const Array2<T, Array1<T> >& grid) {
    int i,j;
    S fx,fy;

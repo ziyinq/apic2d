@@ -14,7 +14,7 @@ using namespace std;
 
 //Try changing the grid resolution
 int grid_resolution = 50;
-scalar timestep = 0.005;
+scalar timestep = 0.01;
 scalar grid_width = 100.0;
 
 FluidSim sim;
