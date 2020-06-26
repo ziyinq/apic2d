@@ -54,4 +54,5 @@ else (EIGEN3_FOUND)
 endif (EIGEN3_FOUND)
 
 include_directories (${CMAKE_CURRENT_SOURCE_DIR})
+add_subdirectory(Deps)
 add_subdirectory (apic2d)

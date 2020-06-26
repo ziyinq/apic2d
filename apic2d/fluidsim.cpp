@@ -196,7 +196,7 @@ void FluidSim::correct(scalar dt)
 // The main fluid simulation step
 void FluidSim::advance(scalar dt) {
   // Change here to try differnt integration scheme
-  const INTEGRATOR_TYPE integration_scheme = IT_APIC;
+  const INTEGRATOR_TYPE integration_scheme = IT_DAPIC;
   const scalar flip_coefficient = 0.95f;
   
   //Passively advect particles
@@ -681,11 +681,11 @@ void FluidSim::init_random_particles()
   }
 }
 
-void FluidSim::initDambreak()
+void FluidSim::initDambreak(int grid_resolution)
 {
-    for(int i = 5; i < 20; ++i)
+    for(int i = 0.1*grid_resolution; i < 0.4*grid_resolution; ++i)
     {
-        for(int j = 5; j < 45; ++j) {
+        for(int j = 0.1*grid_resolution; j < 0.9*grid_resolution; ++j) {
             for(int k = 0; k < 4; ++k) {
                 scalar x = ((scalar) i + 0.5 + (((scalar)rand() / (scalar)RAND_MAX) * 2.0 - 1.0) ) * dx;
                 scalar y = ((scalar) j + 0.5 + (((scalar)rand() / (scalar)RAND_MAX) * 2.0 - 1.0) ) * dx;

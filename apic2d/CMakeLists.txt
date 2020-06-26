@@ -24,3 +24,4 @@ endif (GLUT_FOUND)
 
 add_executable (APIC2D ${Headers} ${Templates} ${Sources})
 target_link_libraries (APIC2D ${APIC2D_LIBRARIES} )
+target_link_libraries(APIC2D PUBLIC partio)

@@ -13,8 +13,8 @@
 using namespace std;
 
 //Try changing the grid resolution
-int grid_resolution = 50;
-scalar timestep = 0.01;
+int grid_resolution = 200;
+scalar timestep = 0.002;
 scalar grid_width = 100.0;
 
 FluidSim sim;
@@ -60,7 +60,7 @@ int main(int argc, char **argv)
   sim.root_sources = NULL;
 
   sim.update_boundary();
-  sim.initDambreak();
+  sim.initDambreak(grid_resolution);
 
   Gluvi::run();
   
