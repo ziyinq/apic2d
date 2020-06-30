@@ -4,7 +4,7 @@
 #include "MathDefs.h"
 #include "array2.h"
 #include "pcgsolver/pcg_solver.h"
-
+#include <Partio.h>
 #include <vector>
 
 class sorter;
@@ -27,6 +27,7 @@ struct Particle
   
   Vector2s buf0;
 
+  scalar vort;
   scalar radii;
   scalar dens;
   ParticleType type;
@@ -108,7 +109,10 @@ public:
   Array2s u, v;
   Array2s temp_u, temp_v;
   Array2s saved_u, saved_v;
-  
+
+  /*! Fluid vorticity */
+  Array2s curl;
+
   /*! Tracer particles */
   std::vector<Particle> particles;
   
@@ -128,7 +132,8 @@ public:
   robertbridson::SparseMatrix<scalar> matrix;
   std::vector<double> rhs;
   std::vector<double> pressure;
-  
+
+  scalar get_vorticity(const Vector2s& position);
   Vector2s get_velocity(const Vector2s& position);
   Matrix2s get_affine_matrix(const Vector2s& position);
   
@@ -149,12 +154,14 @@ public:
   Matrix2s construct_dapic_c(Vector2s& position);
   
   void save_velocity();
-  
+  void save_bgeo();
+
   void compute_cohesion_force();
   void compute_density();
   void compute_normal();
   void correct(scalar dt);
   void resample(Vector2s& p, Vector2s& u, Matrix2s& c);
+  void calculateCurl();
   
   bool draw_grid;
   bool draw_particles;

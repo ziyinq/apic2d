@@ -50,8 +50,10 @@ void FluidSim::initialize(const Vector2s& origin_, scalar width, int ni_, int nj
   dx = width / (scalar)ni;
   u.resize(ni+1,nj); temp_u.resize(ni+1,nj); u_weights.resize(ni+1,nj); u_valid.resize(ni+1,nj); saved_u.resize(ni+1, nj);
   v.resize(ni,nj+1); temp_v.resize(ni,nj+1); v_weights.resize(ni,nj+1); v_valid.resize(ni, nj+1); saved_v.resize(ni,nj+1);
+  curl.resize(ni+1, nj+1);
   u.set_zero();
   v.set_zero();
+  curl.set_zero();
   nodal_solid_phi.resize(ni+1,nj+1);
   valid.resize(ni+1, nj+1);
   old_valid.resize(ni+1, nj+1);
@@ -224,7 +226,8 @@ void FluidSim::advance(scalar dt) {
   //For extrapolated velocities, replace the normal component with
   //that of the object.
   constrain_velocity();
-  
+
+  calculateCurl();
 //  correct(dt);
   
   switch (integration_scheme) {
@@ -248,9 +251,9 @@ void FluidSim::advance(scalar dt) {
       map_g2p_apic(dt);
       break;
 
-      case IT_DAPIC:
-          map_g2p_dapic(dt);
-          break;
+    case IT_DAPIC:
+      map_g2p_dapic(dt);
+      break;
       
     default:
       std::cerr << "Unknown integrator type!" << std::endl;
@@ -259,6 +262,19 @@ void FluidSim::advance(scalar dt) {
 
   particle_boundary_collision(dt);
   
+}
+
+void FluidSim::calculateCurl()
+{
+    curl.set_zero();
+    for (int i = 0; i < ni; i++)
+        for (int j = 0; j < nj; j++)
+        {
+            if(i>0 && i<ni && j>0 &&j<nj)
+            {
+                curl(i,j) = (u(i,j) - u(i,j-1) + v(i-1,j) - v(i,j))/dx;
+            }
+        }
 }
 
 void FluidSim::save_velocity()
@@ -436,6 +452,14 @@ Vector2s FluidSim::get_velocity(const Vector2s& position) {
   scalar v_value = interpolate_value(p1, v);
   
   return Vector2s(u_value, v_value);
+}
+
+scalar FluidSim::get_vorticity(const Vector2s &position){
+
+    Vector2s p = (position - origin) / dx;
+    scalar curl_value = fabs(interpolate_value(p, curl)) / 10.;
+    curl_value = fmin(fmax(curl_value, 0.0f), .99f);
+    return curl_value;
 }
 
 Matrix2s FluidSim::get_affine_matrix(const Vector2s& position)
@@ -762,6 +786,7 @@ void FluidSim::map_g2p_apic(float dt)
     p.v = get_velocity(p.x);
     p.c = get_affine_matrix(p.x);
     p.x += p.v * dt;
+    p.vort = get_vorticity(p.x);
   }
 }
 
@@ -776,6 +801,7 @@ void FluidSim::map_g2p_dapic(float dt)
         p.v = get_velocity(p.x);
         p.c = construct_dapic_c(p.x);
         p.x += p.v * dt;
+        p.vort = get_vorticity(p.x);
     }
 }
 
@@ -935,8 +961,12 @@ void FluidSim::render()
   }
   
   glPopMatrix();
-  std::string filename = "../../output/image_" + std::to_string(count) + ".ppm";
-  Gluvi::ppm_screenshot(filename.c_str());
+  if (count % 10 == 0)
+  {
+      save_bgeo();
+  }
+//  std::string filename = "../../output/image_" + std::to_string(count) + ".ppm";
+//  Gluvi::ppm_screenshot(filename.c_str());
   count += 1;
 }
 
@@ -956,14 +986,14 @@ Particle::Particle(const Vector2s& x_, const Vector2s& v_, const scalar& radii_,
 }
 
 Particle::Particle()
-: x(Vector2s::Zero()), v(Vector2s::Zero()), radii(0.0), dens(0), type(PT_LIQUID)
+: x(Vector2s::Zero()), v(Vector2s::Zero()), radii(0.0), dens(0), type(PT_LIQUID), vort(0)
 {
   c.setZero();
   buf0.setZero();
 }
 
 Particle::Particle(const Particle& p)
-: x(p.x), v(p.v), radii(p.radii), dens(0), type(p.type)
+: x(p.x), v(p.v), radii(p.radii), dens(0), type(p.type), vort(p.vort)
 {
   c.setZero();
   buf0.setZero();
@@ -1027,6 +1057,37 @@ void extrapolate(Array2s& grid, Array2s& old_grid, const Array2s& grid_weight, c
     *pgrid_source = *pgrid_target;
     *pvalid_source = *pvalid_target;
   }
+}
+
+void FluidSim::save_bgeo()
+{
+    std::string filestr = std::string("../../output/frame_") + std::string("\%04d.bgeo");
+    char filename[1024];
+    int framenum = count / 10;
+    sprintf(filename, filestr.c_str(), framenum);
+    Partio::ParticlesDataMutable* parts = Partio::create();
+    Partio::ParticleAttribute vH, posH, vortH;
+    vH = parts->addAttribute("v", Partio::VECTOR, 3);
+    posH = parts->addAttribute("position", Partio::VECTOR, 3);
+    vortH = parts->addAttribute("vorticity", Partio::FLOAT, 1);
+    for (int i=0; i< particles.size(); i++){
+        if(particles[i].type == PT_LIQUID)
+        {
+            int idx = parts->addParticle();
+            float* _p = parts->dataWrite<float>(posH, idx);
+            float* _v = parts->dataWrite<float>(vH, idx);
+            float* _vort = parts->dataWrite<float>(vortH, idx);
+            _p[0] = particles[i].x[0];
+            _p[1] = particles[i].x[1];
+            _p[2] = 0;
+            _v[0] = particles[i].v[0];
+            _v[1] = particles[i].v[1];
+            _v[2] = 0;
+            _vort[0] = particles[i].vort;
+        }
+    }
+    Partio::write(filename, *parts);
+    parts->release();
 }
 
 
