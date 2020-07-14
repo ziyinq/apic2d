@@ -162,6 +162,7 @@ public:
   void correct(scalar dt);
   void resample(Vector2s& p, Vector2s& u, Matrix2s& c);
   void calculateCurl();
+  double robust_expm1(double x);
   
   bool draw_grid;
   bool draw_particles;
@@ -226,6 +227,7 @@ protected:
   
   //fluid velocity operations
   void advect(scalar dt);
+  void dapic_advect(scalar dt);
   void add_force(scalar dt);
   
   void project(scalar dt);

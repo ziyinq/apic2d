@@ -198,7 +198,7 @@ void FluidSim::correct(scalar dt)
 // The main fluid simulation step
 void FluidSim::advance(scalar dt) {
   // Change here to try differnt integration scheme
-  const INTEGRATOR_TYPE integration_scheme = IT_DAPIC;
+  const INTEGRATOR_TYPE integration_scheme = IT_APIC;
   const scalar flip_coefficient = 0.95f;
   
   //Passively advect particles
@@ -785,13 +785,52 @@ void FluidSim::map_g2p_apic(float dt)
     
     p.v = get_velocity(p.x);
     p.c = get_affine_matrix(p.x);
-    p.x += p.v * dt;
-    p.vort = get_vorticity(p.x);
+
+      double c11 = p.v[0];
+      double c12 = p.c(0,0);
+      double c13 = p.c(1,0);
+      double c21 = p.v[1];
+      double c22 = p.c(0,1);
+      double c23 = p.c(1,1);
+      double x0 = p.x[0];
+      double y0 = p.x[1];
+
+      double n = c13*c21 - c11*c23;
+      double yn = c11*c22 - c12*c21;
+      double m = sqrt(4*c13*c22+sqr(c12-c23));
+      double o = c12 + c23;
+      if (m < 1e-6) {
+            p.x[0] = x0 + 0.5*n*dt*(exp(0.5*o*dt) - exp(-0.5*o*dt)) +
+                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
+
+            p.x[1] = y0 + 0.5*yn*dt*(exp(0.5*o*dt) - exp(-0.5*o*dt)) +
+                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
+      }
+      else
+      {
+            p.x[0] = x0 + n*dt/m*(robust_expm1(0.5*(m+o)*dt) - robust_expm1(0.5*(o-m)*dt)) +
+                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
+
+            p.x[1] = y0 + yn*dt/m*(robust_expm1(0.5*(m+o)*dt) - robust_expm1(0.5*(o-m)*dt)) +
+                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
+      }
+
+//      p.x += p.v * dt;
+        p.vort = get_vorticity(p.x);
   }
+}
+
+double FluidSim::robust_expm1(double x)
+{
+    if (abs(x) < 1e-8)
+        return 1;
+    else
+        return std::expm1(x)/x;
 }
 
 void FluidSim::map_g2p_dapic(float dt)
 {
+    std::cout << cfl() << std::endl;
     Vector3sT k1 = Vector3sT(0,1,0);
     Vector3sT k2 = Vector3sT(0,0,1);
     for(Particle& p : particles)
@@ -800,7 +839,44 @@ void FluidSim::map_g2p_dapic(float dt)
 
         p.v = get_velocity(p.x);
         p.c = construct_dapic_c(p.x);
-        p.x += p.v * dt;
+        double c11 = p.v[0];
+        double c12 = p.c(0,0);
+        double c13 = p.c(1,0);
+        double c21 = p.v[1];
+        double c22 = p.c(0,1);
+        double c23 = p.c(1,1);
+        double x0 = p.x[0];
+        double y0 = p.x[1];
+
+        double n = c13*c21 - c11*c23;
+        double yn = c11*c22 - c12*c21;
+        double m = sqrt(4*c13*c22+sqr(c12-c23));
+//        double o = c12 + c23;
+        double o = 0;
+        if (m < 1e-6) {
+//            p.x[0] = x0 + 0.5*n*dt*(exp(0.5*o*dt) - exp(-0.5*o*dt)) +
+//                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
+//
+//            p.x[1] = y0 + 0.5*yn*dt*(exp(0.5*o*dt) - exp(-0.5*o*dt)) +
+//                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
+            p.x[0] = x0 + 0.5*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
+
+            p.x[1] = y0 + 0.5*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
+        }
+        else
+        {
+//            p.x[0] = x0 + n*dt/m*(robust_expm1(0.5*(m+o)*dt) - robust_expm1(0.5*(o-m)*dt)) +
+//                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
+//
+//            p.x[1] = y0 + yn*dt/m*(robust_expm1(0.5*(m+o)*dt) - robust_expm1(0.5*(o-m)*dt)) +
+//                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
+            p.x[0] = x0 + n*dt/m*(robust_expm1(0.5*m*dt) - robust_expm1(0.5*-m*dt)) +
+                     0.5*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
+
+            p.x[1] = y0 + yn*dt/m*(robust_expm1(0.5*m*dt) - robust_expm1(0.5*-m*dt)) +
+                     0.5*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
+        }
+
         p.vort = get_vorticity(p.x);
     }
 }
