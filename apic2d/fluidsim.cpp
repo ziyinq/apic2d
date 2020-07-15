@@ -198,7 +198,7 @@ void FluidSim::correct(scalar dt)
 // The main fluid simulation step
 void FluidSim::advance(scalar dt) {
   // Change here to try differnt integration scheme
-  const INTEGRATOR_TYPE integration_scheme = IT_APIC;
+  const INTEGRATOR_TYPE integration_scheme = IT_DAPIC;
   const scalar flip_coefficient = 0.95f;
   
   //Passively advect particles
@@ -799,20 +799,42 @@ void FluidSim::map_g2p_apic(float dt)
       double yn = c11*c22 - c12*c21;
       double m = sqrt(4*c13*c22+sqr(c12-c23));
       double o = c12 + c23;
+      double d = c13*c22-c12*c23;
+
+      double test_x = (2*(-c13*c21+c11*c23+c13*c22*x0-c12*c23*x0)
+                       + 2*exp(0.5*(c12+c23)*dt)*((c13*c21-c11*c23)*cosh(0.5*m*dt)-
+                                                  (c12*c13*c21-2*c11*c13*c22+c11*c12*c23+c13*c21*c23-c11*c23*c23)*sinh(0.5*m*dt)/m))
+                      / (2*(c13*c22-c12*c23));
+      double test_y = (2*(-c11*c22+c13*c22*y0+c12*(c21-c23*y0))
+                       + 2*exp(0.5*(c12+c23)*dt)*((-c12*c21+c11*c22)*cosh(0.5*m*dt)+
+                                                  (c12*c12*c21-c11*c12*c22+2*c13*c21*c22-(c12*c21+c11*c22)*c23)*sinh(0.5*m*dt)/m))
+                      / (2*(c13*c22-c12*c23));
+      if (m != m)
+      {
+          if (abs(d) < 1e-6)
+          {
+              m = abs(c12+c23);
+              break;
+          }
+          p.x[0] = x0 + (-n + exp(0.5*o*dt)*(n*cos(0.5*dt)+(2*d*c11-n*o)*sin(0.5*dt))) / d;
+            p.x[1] = y0 + (-yn + exp(0.5*o*dt)*(yn*cos(0.5*dt)+(2*d*c21-yn*o)*sin(0.5*dt))) / d;
+      }
       if (m < 1e-6) {
             p.x[0] = x0 + 0.5*n*dt*(exp(0.5*o*dt) - exp(-0.5*o*dt)) +
                     0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
 
             p.x[1] = y0 + 0.5*yn*dt*(exp(0.5*o*dt) - exp(-0.5*o*dt)) +
                     0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
+            assert(m==m);
       }
-      else
+      if (m >= 1e-6)
       {
             p.x[0] = x0 + n*dt/m*(robust_expm1(0.5*(m+o)*dt) - robust_expm1(0.5*(o-m)*dt)) +
                     0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
 
             p.x[1] = y0 + yn*dt/m*(robust_expm1(0.5*(m+o)*dt) - robust_expm1(0.5*(o-m)*dt)) +
                     0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
+            assert(m==m);
       }
 
 //      p.x += p.v * dt;
@@ -830,7 +852,6 @@ double FluidSim::robust_expm1(double x)
 
 void FluidSim::map_g2p_dapic(float dt)
 {
-    std::cout << cfl() << std::endl;
     Vector3sT k1 = Vector3sT(0,1,0);
     Vector3sT k2 = Vector3sT(0,0,1);
     for(Particle& p : particles)
@@ -851,25 +872,35 @@ void FluidSim::map_g2p_dapic(float dt)
         double n = c13*c21 - c11*c23;
         double yn = c11*c22 - c12*c21;
         double m = sqrt(4*c13*c22+sqr(c12-c23));
-//        double o = c12 + c23;
-        double o = 0;
+        double d = c13*c22-c12*c23;
+        double o = c12 + c23;
+        o = 0;
+
+        double test_x = (2*(-c13*c21+c11*c23+c13*c22*x0-c12*c23*x0)
+                         + 2*exp(0.5*(c12+c23)*dt)*((c13*c21-c11*c23)*cosh(0.5*m*dt)-
+                                                    (c12*c13*c21-2*c11*c13*c22+c11*c12*c23+c13*c21*c23-c11*c23*c23)*sinh(0.5*m*dt)/m))
+                        / (2*(c13*c22-c12*c23));
+        double test_y = (2*(-c11*c22+c13*c22*y0+c12*(c21-c23*y0))
+                         + 2*exp(0.5*(c12+c23)*dt)*((-c12*c21+c11*c22)*cosh(0.5*m*dt)+
+                                                    (c12*c12*c21-c11*c12*c22+2*c13*c21*c22-(c12*c21+c11*c22)*c23)*sinh(0.5*m*dt)/m))
+                        / (2*(c13*c22-c12*c23));
+        if (m != m)
+        {
+            if (abs(d) < 1e-6)
+            {
+                m = 0;
+                break;
+            }
+            p.x[0] = x0 + (-n + (n*cos(0.5*dt)+2*d*c11*sin(0.5*dt))) / d;
+            p.x[1] = y0 + (-yn + (yn*cos(0.5*dt)+2*d*c21*sin(0.5*dt))) / d;
+        }
         if (m < 1e-6) {
-//            p.x[0] = x0 + 0.5*n*dt*(exp(0.5*o*dt) - exp(-0.5*o*dt)) +
-//                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
-//
-//            p.x[1] = y0 + 0.5*yn*dt*(exp(0.5*o*dt) - exp(-0.5*o*dt)) +
-//                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
             p.x[0] = x0 + 0.5*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
 
             p.x[1] = y0 + 0.5*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
         }
-        else
+        if (m >= 1e-6)
         {
-//            p.x[0] = x0 + n*dt/m*(robust_expm1(0.5*(m+o)*dt) - robust_expm1(0.5*(o-m)*dt)) +
-//                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
-//
-//            p.x[1] = y0 + yn*dt/m*(robust_expm1(0.5*(m+o)*dt) - robust_expm1(0.5*(o-m)*dt)) +
-//                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
             p.x[0] = x0 + n*dt/m*(robust_expm1(0.5*m*dt) - robust_expm1(0.5*-m*dt)) +
                      0.5*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
 
