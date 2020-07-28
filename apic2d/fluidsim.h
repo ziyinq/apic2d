@@ -89,6 +89,7 @@ public:
   void update_boundary();
   void init_random_particles();
   void initDambreak(int grid_resolution);
+  void initTaylor(int grid_resolution);
   void render();
   void render_boundaries(const Boundary& b);
   scalar compute_phi(const Vector2s& pos) const;

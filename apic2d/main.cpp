@@ -16,9 +16,9 @@
 using namespace std;
 
 //Try changing the grid resolution
-int grid_resolution = 200;
-scalar timestep = 0.002;
-scalar grid_width = 100.0;
+int grid_resolution = 40;
+scalar timestep = 0.01;
+scalar grid_width = 4*M_PI;
 
 FluidSim sim;
 
@@ -59,12 +59,13 @@ int main(int argc, char **argv)
   //Set up the simulation
   sim.initialize(o0, grid_width, grid_resolution, grid_resolution, 1.0);
 
-  sim.root_boundary = new FluidSim::Boundary(Vector2s(10, 10), Vector2s(80, 80), FluidSim::BT_BOX, true);
+  sim.root_boundary = new FluidSim::Boundary(Vector2s(M_PI, M_PI), Vector2s(2*M_PI, 2*M_PI), FluidSim::BT_BOX, true);
 
   sim.root_sources = NULL;
 
   sim.update_boundary();
-  sim.initDambreak(grid_resolution);
+//  sim.initDambreak(grid_resolution);
+  sim.initTaylor(grid_resolution);
 
   Gluvi::run();
 
@@ -153,7 +154,7 @@ void drag(int x, int y)
 void timer(int junk)
 {
   sim.advance(timestep);
-  
+
   glutPostRedisplay();
   glutTimerFunc(30, timer, 0);
   

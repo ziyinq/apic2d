@@ -198,8 +198,8 @@ void FluidSim::correct(scalar dt)
 // The main fluid simulation step
 void FluidSim::advance(scalar dt) {
   // Change here to try differnt integration scheme
-  const INTEGRATOR_TYPE integration_scheme = IT_DAPIC;
-  const scalar flip_coefficient = 0.95f;
+  const INTEGRATOR_TYPE integration_scheme = IT_FLIP_BRIDSON;
+  const scalar flip_coefficient = 1.0f;
   
   //Passively advect particles
   m_sorter->sort(this);
@@ -212,7 +212,7 @@ void FluidSim::advance(scalar dt) {
     save_velocity();
   }
   
-  add_force(dt);
+//  add_force(dt);
   project(dt);
   
   temp_u = u;
@@ -222,7 +222,13 @@ void FluidSim::advance(scalar dt) {
   //we must extrapolate velocities from the fluid domain into these zero-area faces.
   extrapolate(u, temp_u, u_weights, liquid_phi, valid, old_valid, Vector2i(-1, 0));
   extrapolate(v, temp_v, v_weights, liquid_phi, valid, old_valid, Vector2i(0, -1));
-  
+
+    for (int j = 10; j <= 30; j++)
+        std::cout << u(10,j) << " " << u(30,j) << std::endl;
+
+//    for (int i = 10; i <= 30; i++)
+//        std::cout << v(i,10) << " " << v(i, 30) << std::endl;
+
   //For extrapolated velocities, replace the normal component with
   //that of the object.
   constrain_velocity();
@@ -259,6 +265,13 @@ void FluidSim::advance(scalar dt) {
       std::cerr << "Unknown integrator type!" << std::endl;
       break;
   }
+    float vol_particle = 4*M_PI*M_PI / particles.size();
+    float energy = 0;
+    for (int i = 0; i < particles.size(); i++)
+    {
+        energy += vol_particle*particles[i].v.squaredNorm();
+    }
+    std::cout << "Frame " << count << ", " << energy << std::endl;
 
   particle_boundary_collision(dt);
   
@@ -655,7 +668,7 @@ void FluidSim::solve_pressure(scalar dt) {
     else
       v(i,j) = 0;
   }
-  
+
 }
 
 scalar FluidSim::compute_phi(const Vector2s& pos, const Boundary& b) const
@@ -718,6 +731,31 @@ void FluidSim::initDambreak(int grid_resolution)
             }
         }
     }
+}
+
+void FluidSim::initTaylor(int grid_resolution)
+{
+    for(int i = 0.25*grid_resolution; i < 0.75*grid_resolution; i++)
+    {
+        for(int j = 0.25*grid_resolution; j < 0.75*grid_resolution; j++) {
+            for (int k = 0; k < 2; k++)
+                for (int l = 0; l < 2; l++)
+                {
+                    scalar x = ((scalar) i + 0.5*k + 0.25) * dx;
+                    scalar y = ((scalar) j + 0.5*l + 0.25) * dx;
+                    Vector2s pt = Vector2s(x,y) + origin;
+                    Vector2s pos = (pt - Vector2s(2*M_PI, 2*M_PI));
+                    add_particle(Particle(pt, Vector2s(-sin(pos.x())*cos(pos.y()), cos(pos.x())*sin(pos.y())), dx / sqrt(2.0), PT_LIQUID));
+                }
+        }
+    }
+    float vol_particle = 4*M_PI*M_PI / particles.size();
+    float energy = 0;
+    for (int i = 0; i < particles.size(); i++)
+    {
+        energy += vol_particle*particles[i].v.squaredNorm();
+    }
+    std::cout << energy << std::endl;
 }
 
 void FluidSim::map_p2g()
@@ -786,58 +824,65 @@ void FluidSim::map_g2p_apic(float dt)
     p.v = get_velocity(p.x);
     p.c = get_affine_matrix(p.x);
 
-      double c11 = p.v[0];
-      double c12 = p.c(0,0);
-      double c13 = p.c(1,0);
-      double c21 = p.v[1];
-      double c22 = p.c(0,1);
-      double c23 = p.c(1,1);
-      double x0 = p.x[0];
-      double y0 = p.x[1];
+//      double c11 = p.v[0];
+//      double c12 = p.c(0,0);
+//      double c13 = p.c(1,0);
+//      double c21 = p.v[1];
+//      double c22 = p.c(0,1);
+//      double c23 = p.c(1,1);
+//      double x0 = p.x[0];
+//      double y0 = p.x[1];
+//
+//      double n = c13*c21 - c11*c23;
+//      double yn = c11*c22 - c12*c21;
+//      double m = sqrt(4*c13*c22+sqr(c12-c23));
+//      double o = c12 + c23;
+//      double d = c13*c22-c12*c23;
+//
+//      double test_x = (2*(-c13*c21+c11*c23+c13*c22*x0-c12*c23*x0)
+//                       + 2*exp(0.5*(c12+c23)*dt)*((c13*c21-c11*c23)*cosh(0.5*m*dt)-
+//                                                  (c12*c13*c21-2*c11*c13*c22+c11*c12*c23+c13*c21*c23-c11*c23*c23)*sinh(0.5*m*dt)/m))
+//                      / (2*(c13*c22-c12*c23));
+//      double test_y = (2*(-c11*c22+c13*c22*y0+c12*(c21-c23*y0))
+//                       + 2*exp(0.5*(c12+c23)*dt)*((-c12*c21+c11*c22)*cosh(0.5*m*dt)+
+//                                                  (c12*c12*c21-c11*c12*c22+2*c13*c21*c22-(c12*c21+c11*c22)*c23)*sinh(0.5*m*dt)/m))
+//                      / (2*(c13*c22-c12*c23));
+//      Vector2s pos = p.x + p.v*dt;
+//
+//      if (m != m)
+//      {
+//          if (abs(d) < 5e-4)
+//          {
+//              m = abs(c12+c23);
+//          }
+//          else
+//          {
+//              p.x[0] = x0 + (-n + exp(0.5*o*dt)*(n*cos(0.5*dt)+(2*d*c11-n*o)*sin(0.5*dt))) / d;
+//              p.x[1] = y0 + (-yn + exp(0.5*o*dt)*(yn*cos(0.5*dt)+(2*d*c21-yn*o)*sin(0.5*dt))) / d;
+//          }
+//      }
+//      if (m < 1e-6) {
+//            p.x[0] = x0 + 0.5*n*dt*(exp(0.5*o*dt) - exp(-0.5*o*dt)) +
+//                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
+//
+//            p.x[1] = y0 + 0.5*yn*dt*(exp(0.5*o*dt) - exp(-0.5*o*dt)) +
+//                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
+//            assert(m==m);
+//      }
+//      if (m >= 1e-6)
+//      {
+//            p.x[0] = x0 + n*dt/m*(robust_expm1(0.5*(m+o)*dt) - robust_expm1(0.5*(o-m)*dt)) +
+//                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
+//
+//            p.x[1] = y0 + yn*dt/m*(robust_expm1(0.5*(m+o)*dt) - robust_expm1(0.5*(o-m)*dt)) +
+//                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
+//            assert(m==m);
+//      }
+//      Vector2s pos_diff = p.x - pos;
+//      if (pos_diff.squaredNorm() > 1e-5)
+//          std::cout << "n: " << n << ", yn: " << yn << ", m: " << m << ", d:" << d << std::endl;
 
-      double n = c13*c21 - c11*c23;
-      double yn = c11*c22 - c12*c21;
-      double m = sqrt(4*c13*c22+sqr(c12-c23));
-      double o = c12 + c23;
-      double d = c13*c22-c12*c23;
-
-      double test_x = (2*(-c13*c21+c11*c23+c13*c22*x0-c12*c23*x0)
-                       + 2*exp(0.5*(c12+c23)*dt)*((c13*c21-c11*c23)*cosh(0.5*m*dt)-
-                                                  (c12*c13*c21-2*c11*c13*c22+c11*c12*c23+c13*c21*c23-c11*c23*c23)*sinh(0.5*m*dt)/m))
-                      / (2*(c13*c22-c12*c23));
-      double test_y = (2*(-c11*c22+c13*c22*y0+c12*(c21-c23*y0))
-                       + 2*exp(0.5*(c12+c23)*dt)*((-c12*c21+c11*c22)*cosh(0.5*m*dt)+
-                                                  (c12*c12*c21-c11*c12*c22+2*c13*c21*c22-(c12*c21+c11*c22)*c23)*sinh(0.5*m*dt)/m))
-                      / (2*(c13*c22-c12*c23));
-      if (m != m)
-      {
-          if (abs(d) < 1e-6)
-          {
-              m = abs(c12+c23);
-              break;
-          }
-          p.x[0] = x0 + (-n + exp(0.5*o*dt)*(n*cos(0.5*dt)+(2*d*c11-n*o)*sin(0.5*dt))) / d;
-            p.x[1] = y0 + (-yn + exp(0.5*o*dt)*(yn*cos(0.5*dt)+(2*d*c21-yn*o)*sin(0.5*dt))) / d;
-      }
-      if (m < 1e-6) {
-            p.x[0] = x0 + 0.5*n*dt*(exp(0.5*o*dt) - exp(-0.5*o*dt)) +
-                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
-
-            p.x[1] = y0 + 0.5*yn*dt*(exp(0.5*o*dt) - exp(-0.5*o*dt)) +
-                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
-            assert(m==m);
-      }
-      if (m >= 1e-6)
-      {
-            p.x[0] = x0 + n*dt/m*(robust_expm1(0.5*(m+o)*dt) - robust_expm1(0.5*(o-m)*dt)) +
-                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
-
-            p.x[1] = y0 + yn*dt/m*(robust_expm1(0.5*(m+o)*dt) - robust_expm1(0.5*(o-m)*dt)) +
-                    0.5*exp(0.5*o*dt)*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
-            assert(m==m);
-      }
-
-//      p.x += p.v * dt;
+        p.x += p.v * dt;
         p.vort = get_vorticity(p.x);
   }
 }
@@ -884,15 +929,18 @@ void FluidSim::map_g2p_dapic(float dt)
                          + 2*exp(0.5*(c12+c23)*dt)*((-c12*c21+c11*c22)*cosh(0.5*m*dt)+
                                                     (c12*c12*c21-c11*c12*c22+2*c13*c21*c22-(c12*c21+c11*c22)*c23)*sinh(0.5*m*dt)/m))
                         / (2*(c13*c22-c12*c23));
+        Vector2s pos = p.x + p.v*dt;
         if (m != m)
         {
-            if (abs(d) < 1e-6)
+            if (abs(d) < 5e-4)
             {
                 m = 0;
-                break;
             }
-            p.x[0] = x0 + (-n + (n*cos(0.5*dt)+2*d*c11*sin(0.5*dt))) / d;
-            p.x[1] = y0 + (-yn + (yn*cos(0.5*dt)+2*d*c21*sin(0.5*dt))) / d;
+            else
+            {
+                p.x[0] = x0 + (-n + (n*cos(0.5*dt)+2*d*c11*sin(0.5*dt))) / d;
+                p.x[1] = y0 + (-yn + (yn*cos(0.5*dt)+2*d*c21*sin(0.5*dt))) / d;
+            }
         }
         if (m < 1e-6) {
             p.x[0] = x0 + 0.5*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c11*dt;
@@ -907,6 +955,9 @@ void FluidSim::map_g2p_dapic(float dt)
             p.x[1] = y0 + yn*dt/m*(robust_expm1(0.5*m*dt) - robust_expm1(0.5*-m*dt)) +
                      0.5*(robust_expm1(0.5*m*dt) + robust_expm1(-0.5*m*dt))*c21*dt;
         }
+        Vector2s pos_diff = p.x - pos;
+        if (pos_diff.squaredNorm() > 1e-5)
+            std::cout << "n: " << n << ", yn: " << yn << ", m: " << m << ", d:" << d << std::endl;
 
         p.vort = get_vorticity(p.x);
     }
