@@ -7,6 +7,7 @@
 #include <Partio.h>
 #include <vector>
 
+
 class sorter;
 
 enum ParticleType
@@ -114,6 +115,10 @@ public:
   /*! Fluid vorticity */
   Array2s curl;
 
+  /*! Grid mass */
+  Array2s u_weight;
+  Array2s v_weight;
+
   /*! Tracer particles */
   std::vector<Particle> particles;
   
@@ -156,6 +161,7 @@ public:
   
   void save_velocity();
   void save_bgeo();
+  float gridEnergy();
 
   void compute_cohesion_force();
   void compute_density();

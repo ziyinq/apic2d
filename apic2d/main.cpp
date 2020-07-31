@@ -16,9 +16,9 @@
 using namespace std;
 
 //Try changing the grid resolution
-int grid_resolution = 40;
+int grid_resolution = 20;
 scalar timestep = 0.01;
-scalar grid_width = 4*M_PI;
+scalar grid_width = 2*M_PI;
 
 FluidSim sim;
 
@@ -59,7 +59,7 @@ int main(int argc, char **argv)
   //Set up the simulation
   sim.initialize(o0, grid_width, grid_resolution, grid_resolution, 1.0);
 
-  sim.root_boundary = new FluidSim::Boundary(Vector2s(M_PI, M_PI), Vector2s(2*M_PI, 2*M_PI), FluidSim::BT_BOX, true);
+  sim.root_boundary = new FluidSim::Boundary(Vector2s(0, 0), Vector2s(2*M_PI, 2*M_PI), FluidSim::BT_BOX, true);
 
   sim.root_sources = NULL;
 

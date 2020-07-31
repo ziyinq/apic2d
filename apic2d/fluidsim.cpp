@@ -11,6 +11,8 @@
 #include <GLUT/glut.h> // why does Apple have to put glut.h here...
 #else
 #include <GL/glut.h> // ...when everyone else puts it here?
+#include <fstream>
+
 #endif
 
 #include "openglutils.h"
@@ -50,6 +52,8 @@ void FluidSim::initialize(const Vector2s& origin_, scalar width, int ni_, int nj
   dx = width / (scalar)ni;
   u.resize(ni+1,nj); temp_u.resize(ni+1,nj); u_weights.resize(ni+1,nj); u_valid.resize(ni+1,nj); saved_u.resize(ni+1, nj);
   v.resize(ni,nj+1); temp_v.resize(ni,nj+1); v_weights.resize(ni,nj+1); v_valid.resize(ni, nj+1); saved_v.resize(ni,nj+1);
+  u_weight.resize(ni+1, nj); u_weight.set_zero();
+  v_weight.resize(ni, nj+1); v_weight.set_zero();
   curl.resize(ni+1, nj+1);
   u.set_zero();
   v.set_zero();
@@ -205,33 +209,42 @@ void FluidSim::advance(scalar dt) {
   m_sorter->sort(this);
   
   map_p2g();
-  
-  if (integration_scheme == IT_FLIP_JIANG ||
+
+    if (integration_scheme == IT_FLIP_JIANG ||
       integration_scheme == IT_FLIP_BRACKBILL ||
       integration_scheme == IT_FLIP_BRIDSON) {
     save_velocity();
   }
   
 //  add_force(dt);
+  std::cout << "Before energy: " << gridEnergy() << std::endl;
   project(dt);
-  
+  std::cout << "After energy: " << gridEnergy() << std::endl;
+
   temp_u = u;
   temp_v = v;
   //Pressure projection only produces valid velocities in faces with non-zero associated face area.
   //Because the advection step may interpolate from these invalid faces,
   //we must extrapolate velocities from the fluid domain into these zero-area faces.
-  extrapolate(u, temp_u, u_weights, liquid_phi, valid, old_valid, Vector2i(-1, 0));
-  extrapolate(v, temp_v, v_weights, liquid_phi, valid, old_valid, Vector2i(0, -1));
+//  extrapolate(u, temp_u, u_weights, liquid_phi, valid, old_valid, Vector2i(-1, 0));
+//  extrapolate(v, temp_v, v_weights, liquid_phi, valid, old_valid, Vector2i(0, -1));
 
-    for (int j = 10; j <= 30; j++)
-        std::cout << u(10,j) << " " << u(30,j) << std::endl;
+    for (int j = 0; j <= 19; j++)
+    {
+        u(0,j) = 0;
+        u(20,j) = 0;
+    }
+//        std::cout << u(0,j) << " " << u(20,j) << std::endl;
 
-//    for (int i = 10; i <= 30; i++)
+    for (int i = 10; i <= 19; i++){
+        v(i,0) = 0;
+        v(i, 20) = 0;
+    }
 //        std::cout << v(i,10) << " " << v(i, 30) << std::endl;
 
   //For extrapolated velocities, replace the normal component with
   //that of the object.
-  constrain_velocity();
+//  constrain_velocity();
 
   calculateCurl();
 //  correct(dt);
@@ -275,6 +288,18 @@ void FluidSim::advance(scalar dt) {
 
   particle_boundary_collision(dt);
   
+}
+
+float FluidSim::gridEnergy()
+{
+    float energy = 0;
+    for(int j = 0; j < nj; ++j) for(int i = 0; i < ni+1; ++i) {
+        energy += u_weight(i,j) * u(i,j) * u(i,j);
+    }
+    for(int j = 0; j < nj+1; ++j) for(int i = 0; i < ni; ++i) {
+        energy += v_weight(i,j) * v(i,j) * v(i,j);
+    }
+    return energy;
 }
 
 void FluidSim::calculateCurl()
@@ -557,76 +582,136 @@ void FluidSim::solve_pressure(scalar dt) {
     matrix.resize(system_size);
   }
   matrix.zero();
-  
-  //Build the linear system for pressure
-  for(int j = 1; j < nj-1; ++j) {
-    for(int i = 1; i < ni-1; ++i) {
-      int index = i + ni*j;
-      rhs[index] = 0;
-      pressure[index] = 0;
-      float centre_phi = liquid_phi(i,j);
-      if(centre_phi < 0 && (u_weights(i,j) > 0.0 || u_weights(i+1,j) > 0.0 || v_weights(i,j) > 0.0 || v_weights(i,j+1) > 0.0)) {
-        
-        //right neighbour
-        float term = u_weights(i+1,j) * dt / sqr(dx);
-        float right_phi = liquid_phi(i+1,j);
-        if(right_phi < 0) {
-          matrix.add_to_element(index, index, term);
-          matrix.add_to_element(index, index + 1, -term);
+
+    //Build the linear system for pressure
+    for(int j = 1; j < nj-1; ++j) {
+        for(int i = 1; i < ni-1; ++i) {
+            int index = i + ni*j;
+            rhs[index] = 0;
+            pressure[index] = 0;
+
+            //right neighbour
+            float term = dt / sqr(dx);
+            if(i + 1 < ni) {
+                matrix.add_to_element(index, index, term);
+                matrix.add_to_element(index, index + 1, -term);
+            }
+            else {
+//                float theta = fraction_inside(centre_phi, right_phi);
+//                if(theta < 0.01) theta = 0.01;
+//                matrix.add_to_element(index, index, term/theta);
+            }
+            rhs[index] -= u(i+1,j) / dx;
+
+            //left neighbour
+            term = dt / sqr(dx);
+            if(i - 1 >= 0) {
+                matrix.add_to_element(index, index, term);
+                matrix.add_to_element(index, index - 1, -term);
+            }
+            else {
+//                float theta = fraction_inside(centre_phi, left_phi);
+//                if(theta < 0.01) theta = 0.01;
+//                matrix.add_to_element(index, index, term/theta);
+            }
+            rhs[index] += u(i,j) / dx;
+
+            //top neighbour
+            term = dt / sqr(dx);
+            if(j + 1 < nj) {
+                matrix.add_to_element(index, index, term);
+                matrix.add_to_element(index, index + ni, -term);
+            }
+            else {
+//                float theta = fraction_inside(centre_phi, top_phi);
+//                if(theta < 0.01) theta = 0.01;
+//                matrix.add_to_element(index, index, term/theta);
+            }
+            rhs[index] -= v(i,j+1) / dx;
+
+            //bottom neighbour
+            term = dt / sqr(dx);
+            if(j - 1 >= 0) {
+                matrix.add_to_element(index, index, term);
+                matrix.add_to_element(index, index - ni, -term);
+            }
+            else {
+//                float theta = fraction_inside(centre_phi, bot_phi);
+//                if(theta < 0.01) theta = 0.01;
+//                matrix.add_to_element(index, index, term/theta);
+            }
+            rhs[index] += v(i,j) / dx;
         }
-        else {
-          float theta = fraction_inside(centre_phi, right_phi);
-          if(theta < 0.01) theta = 0.01;
-          matrix.add_to_element(index, index, term/theta);
-        }
-        rhs[index] -= u_weights(i+1,j)*u(i+1,j) / dx;
-        
-        //left neighbour
-        term = u_weights(i,j) * dt / sqr(dx);
-        float left_phi = liquid_phi(i-1,j);
-        if(left_phi < 0) {
-          matrix.add_to_element(index, index, term);
-          matrix.add_to_element(index, index - 1, -term);
-        }
-        else {
-          float theta = fraction_inside(centre_phi, left_phi);
-          if(theta < 0.01) theta = 0.01;
-          matrix.add_to_element(index, index, term/theta);
-        }
-        rhs[index] += u_weights(i,j)*u(i,j) / dx;
-        
-        //top neighbour
-        term = v_weights(i,j+1) * dt / sqr(dx);
-        float top_phi = liquid_phi(i,j+1);
-        if(top_phi < 0) {
-          matrix.add_to_element(index, index, term);
-          matrix.add_to_element(index, index + ni, -term);
-        }
-        else {
-          float theta = fraction_inside(centre_phi, top_phi);
-          if(theta < 0.01) theta = 0.01;
-          matrix.add_to_element(index, index, term/theta);
-        }
-        rhs[index] -= v_weights(i,j+1)*v(i,j+1) / dx;
-        
-        //bottom neighbour
-        term = v_weights(i,j) * dt / sqr(dx);
-        float bot_phi = liquid_phi(i,j-1);
-        if(bot_phi < 0) {
-          matrix.add_to_element(index, index, term);
-          matrix.add_to_element(index, index - ni, -term);
-        }
-        else {
-          float theta = fraction_inside(centre_phi, bot_phi);
-          if(theta < 0.01) theta = 0.01;
-          matrix.add_to_element(index, index, term/theta);
-        }
-        rhs[index] += v_weights(i,j)*v(i,j) / dx;
-      }
     }
-  }
-  
-  //Solve the system using Robert Bridson's incomplete Cholesky PCG solver
+//  //Build the linear system for pressure
+//  for(int j = 1; j < nj-1; ++j) {
+//    for(int i = 1; i < ni-1; ++i) {
+//      int index = i + ni*j;
+//      rhs[index] = 0;
+//      pressure[index] = 0;
+//      float centre_phi = liquid_phi(i,j);
+//      if(centre_phi < 0 && (u_weights(i,j) > 0.0 || u_weights(i+1,j) > 0.0 || v_weights(i,j) > 0.0 || v_weights(i,j+1) > 0.0)) {
+//
+//        //right neighbour
+//        float term = u_weights(i+1,j) * dt / sqr(dx);
+//        float right_phi = liquid_phi(i+1,j);
+//        if(right_phi < 0) {
+//          matrix.add_to_element(index, index, term);
+//          matrix.add_to_element(index, index + 1, -term);
+//        }
+//        else {
+//          float theta = fraction_inside(centre_phi, right_phi);
+//          if(theta < 0.01) theta = 0.01;
+//          matrix.add_to_element(index, index, term/theta);
+//        }
+//        rhs[index] -= u_weights(i+1,j)*u(i+1,j) / dx;
+//
+//        //left neighbour
+//        term = u_weights(i,j) * dt / sqr(dx);
+//        float left_phi = liquid_phi(i-1,j);
+//        if(left_phi < 0) {
+//          matrix.add_to_element(index, index, term);
+//          matrix.add_to_element(index, index - 1, -term);
+//        }
+//        else {
+//          float theta = fraction_inside(centre_phi, left_phi);
+//          if(theta < 0.01) theta = 0.01;
+//          matrix.add_to_element(index, index, term/theta);
+//        }
+//        rhs[index] += u_weights(i,j)*u(i,j) / dx;
+//
+//        //top neighbour
+//        term = v_weights(i,j+1) * dt / sqr(dx);
+//        float top_phi = liquid_phi(i,j+1);
+//        if(top_phi < 0) {
+//          matrix.add_to_element(index, index, term);
+//          matrix.add_to_element(index, index + ni, -term);
+//        }
+//        else {
+//          float theta = fraction_inside(centre_phi, top_phi);
+//          if(theta < 0.01) theta = 0.01;
+//          matrix.add_to_element(index, index, term/theta);
+//        }
+//        rhs[index] -= v_weights(i,j+1)*v(i,j+1) / dx;
+//
+//        //bottom neighbour
+//        term = v_weights(i,j) * dt / sqr(dx);
+//        float bot_phi = liquid_phi(i,j-1);
+//        if(bot_phi < 0) {
+//          matrix.add_to_element(index, index, term);
+//          matrix.add_to_element(index, index - ni, -term);
+//        }
+//        else {
+//          float theta = fraction_inside(centre_phi, bot_phi);
+//          if(theta < 0.01) theta = 0.01;
+//          matrix.add_to_element(index, index, term/theta);
+//        }
+//        rhs[index] += v_weights(i,j)*v(i,j) / dx;
+//      }
+//    }
+//  }
+
+    //Solve the system using Robert Bridson's incomplete Cholesky PCG solver
   
   scalar tolerance;
   int iterations;
@@ -634,6 +719,10 @@ void FluidSim::solve_pressure(scalar dt) {
   if(!success) {
     printf("WARNING: Pressure solve failed!************************************************\n");
   }
+
+//  for (int i = 0; i < pressure.size(); i++)
+//      std::cout << pressure[i] << std::endl;
+//  getchar();
   
   //Apply the velocity update
   u_valid.assign(0);
@@ -669,6 +758,22 @@ void FluidSim::solve_pressure(scalar dt) {
       v(i,j) = 0;
   }
 
+
+    //Build the linear system for pressure
+    for(int j = 1; j < nj-1; ++j) {
+        for(int i = 1; i < ni-1; ++i) {
+            int index = i + ni*j;
+            rhs[index] = 0;
+            pressure[index] = 0;
+            float centre_phi = liquid_phi(i,j);
+            if(centre_phi < 0 && (u_weights(i,j) > 0.0 || u_weights(i+1,j) > 0.0 || v_weights(i,j) > 0.0 || v_weights(i,j+1) > 0.0)) {
+                rhs[index] -= u_weights(i+1,j)*u(i+1,j) / dx;
+                rhs[index] += u_weights(i,j)*u(i,j) / dx;
+                rhs[index] -= v_weights(i,j+1)*v(i,j+1) / dx;
+                rhs[index] += v_weights(i,j)*v(i,j) / dx;
+            }
+        }
+    }
 }
 
 scalar FluidSim::compute_phi(const Vector2s& pos, const Boundary& b) const
@@ -735,9 +840,9 @@ void FluidSim::initDambreak(int grid_resolution)
 
 void FluidSim::initTaylor(int grid_resolution)
 {
-    for(int i = 0.25*grid_resolution; i < 0.75*grid_resolution; i++)
+    for(int i = 0; i < grid_resolution; i++)
     {
-        for(int j = 0.25*grid_resolution; j < 0.75*grid_resolution; j++) {
+        for(int j = 0; j < grid_resolution; j++) {
             for (int k = 0; k < 2; k++)
                 for (int l = 0; l < 2; l++)
                 {
@@ -760,8 +865,9 @@ void FluidSim::initTaylor(int grid_resolution)
 
 void FluidSim::map_p2g()
 {
-  
-  //u-component of velocity
+    float vol_particle = 4*M_PI*M_PI / particles.size();
+
+    //u-component of velocity
   for(int j = 0; j < nj; ++j) for(int i = 0; i < ni+1; ++i) {
     Vector2s pos = Vector2s(i*dx, (j+0.5)*dx) + origin;
     std::vector<Particle *> neighbors;
@@ -771,12 +877,14 @@ void FluidSim::map_p2g()
     scalar sumu = 0.0;
     for(Particle* p : neighbors)
     {
-      scalar w = 4.0 / 3.0 * M_PI * rho * p->radii * p->radii * p->radii * kernel::linear_kernel(p->x - pos, dx);
+//      scalar w = 4.0 / 3.0 * M_PI * rho * p->radii * p->radii * p->radii * kernel::linear_kernel(p->x - pos, dx);
+      scalar w = vol_particle * kernel::linear_kernel(p->x - pos, dx);
       sumu += w * (p->v(0) + p->c.col(0).dot(pos - p->x));
       sumw += w;
     }
     
     u(i, j) = sumw ? sumu / sumw : 0.0;
+    u_weight(i,j) = sumw;
   }
   
   //v-component of velocity
@@ -789,12 +897,14 @@ void FluidSim::map_p2g()
     scalar sumu = 0.0;
     for(Particle* p : neighbors)
     {
-      scalar w = 4.0 / 3.0 * M_PI * rho * p->radii * p->radii * p->radii * kernel::linear_kernel(p->x - pos, dx);
+//      scalar w = 4.0 / 3.0 * M_PI * rho * p->radii * p->radii * p->radii * kernel::linear_kernel(p->x - pos, dx);
+      scalar w = vol_particle* kernel::linear_kernel(p->x - pos, dx);
       sumu += w * (p->v(1) + p->c.col(1).dot(pos - p->x));
       sumw += w;
     }
     
     v(i, j) = sumw ? sumu / sumw : 0.0;
+    v_weight(i,j) = sumw;
   }
 }
 
@@ -1026,7 +1136,8 @@ void FluidSim::map_g2p_flip_bridson(float dt, const scalar coeff)
     Vector2s diff_grid_velocity = next_grid_velocity - original_grid_velocity;
     
     p.v = next_grid_velocity + (p.v + diff_grid_velocity - next_grid_velocity) * coeff;
-    p.x += p.v * dt;
+//    p.x += p.v * dt;
+    p.x += next_grid_velocity * dt;
   }
 }
 

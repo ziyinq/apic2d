@@ -2,6 +2,7 @@
 #define SPARSE_MATRIX_H
 
 #include <iostream>
+#include <fstream>
 #include <vector>
 #include "../util.h"
 
@@ -151,6 +152,32 @@ struct SparseMatrix
       }
       output<<"], "<<n<<", "<<n<<");"<<std::endl;
    }
+
+    void write_matlab()
+    {
+        std::ofstream myfile;
+        myfile.open ("matrix.m");
+        myfile<<"M=sparse([";
+        for(unsigned int i=0; i<n; ++i){
+            for(unsigned int j=0; j<index[i].size(); ++j){
+                myfile<<i+1<<" ";
+            }
+        }
+        myfile<<"],...\n  [";
+        for(unsigned int i=0; i<n; ++i){
+            for(unsigned int j=0; j<index[i].size(); ++j){
+                myfile<<index[i][j]+1<<" ";
+            }
+        }
+        myfile<<"],...\n  [";
+        for(unsigned int i=0; i<n; ++i){
+            for(unsigned int j=0; j<value[i].size(); ++j){
+                myfile<<value[i][j]<<" ";
+            }
+        }
+        myfile<<"], "<<n<<", "<<n<<");"<<std::endl;
+        myfile.close();
+    }
 };
 
 typedef SparseMatrix<float> SparseMatrixf;
